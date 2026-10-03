@@ -1,0 +1,2 @@
+- [FBI rules visibility](fbi-rules-privacy.md) — keep the overview panel public; show each selected law section privately to its selector.
+- [GitHub sync](github-sync.md) — transfer this project's file and configuration changes to the connected FBI repository.
