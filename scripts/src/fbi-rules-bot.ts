@@ -7,12 +7,19 @@ import {
   MediaGalleryBuilder,
   MediaGalleryItemBuilder,
   MessageFlags,
+  Partials,
   SeparatorBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
   TextDisplayBuilder,
 } from "discord.js";
 import { fileURLToPath } from "node:url";
+import {
+  fbiRecordsCommand,
+  handleFbiEvidenceUpload,
+  handleFbiRecordsInteraction,
+  verifyFbiRecordsStore,
+} from "./fbi-records.js";
 
 const COMMAND_NAME = "fbi-rules";
 const SELECT_ID = "fbi-rules:section";
@@ -309,18 +316,24 @@ function buildSectionContainer(sectionId: RuleSectionId): ContainerBuilder {
     );
 }
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
+  partials: [Partials.Channel],
+});
 const commandData = {
   name: COMMAND_NAME,
   description: "عرض شروط وقوانين جهاز FBI",
 };
+const commandDefinitions = [commandData, fbiRecordsCommand];
 
 client.once(Events.ClientReady, async (readyClient) => {
   try {
     const commands = await readyClient.application.commands.fetch();
-    const existingCommand = commands.find((command) => command.name === COMMAND_NAME);
-    if (!existingCommand) {
-      await readyClient.application.commands.create(commandData);
+    for (const definition of commandDefinitions) {
+      const existingCommand = commands.find((command) => command.name === definition.name);
+      if (!existingCommand) {
+        await readyClient.application.commands.create(definition);
+      }
     }
     console.info(`FBI rules bot is ready as ${readyClient.user.tag}.`);
   } catch (error) {
@@ -358,6 +371,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral,
       });
     }
+
+    if (await handleFbiRecordsInteraction(interaction)) {
+      return;
+    }
   } catch (error) {
     console.error("FBI rules interaction failed.", error);
     if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
@@ -369,6 +386,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 });
 
+client.on(Events.MessageCreate, async (message) => {
+  try {
+    await handleFbiEvidenceUpload(message);
+  } catch (error) {
+    console.error(
+      "FBI evidence image handler failed.",
+      error instanceof Error ? error.name : "Unknown error",
+    );
+  }
+});
+
 client.on(Events.Error, (error) => {
   console.error("Discord client error.", error);
 });
@@ -376,6 +404,20 @@ client.on(Events.Error, (error) => {
 const token = process.env.DISCORD_BOT_TOKEN;
 if (!token) {
   throw new Error("Missing required secret: DISCORD_BOT_TOKEN");
+}
+
+if (process.env.MONGODB_URI) {
+  try {
+    await verifyFbiRecordsStore();
+    console.info("FBI records database is ready.");
+  } catch (error) {
+    console.error(
+      "MongoDB is unavailable; FBI record submissions will not work yet.",
+      error instanceof Error ? error.name : "Unknown error",
+    );
+  }
+} else {
+  console.warn("MONGODB_URI is not configured; FBI record submissions are disabled.");
 }
 
 await client.login(token);
